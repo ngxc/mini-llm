@@ -1,5 +1,6 @@
 # mini-llm  
 一个简易的 LLM 模型  by ngxc  
+相比minimind更直观的大模型0到1构建项目
 
 ---
 
