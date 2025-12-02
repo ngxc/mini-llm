@@ -12,7 +12,7 @@
 
 它会根据“上文 + 因果 + 注意力”去预测下一个 token 的概率。  
 这就是大模型的本质。
-![img_2.png](https://youke1.picui.cn/s1/2025/11/04/69096a912735d.png)
+![img_2.png](https://s41.ax1x.com/2025/12/02/pZZaHDx.png)
 ---
 
 ##  模型原理简述
@@ -73,7 +73,7 @@ python pre_train.py        # 开始训练（默认矮胖模型）
 python pre_chat.py         # 接龙测试模型效果
 ```
 ####  可以看到预训练后的模型能顺着我们的话语接着往下输出但是逻辑不算流畅，这个算是正常的
-![img.png](https://youke1.picui.cn/s1/2025/11/04/69096a57407b9.png)
+![img.png]([https://youke1.picui.cn/s1/2025/11/04/69096a57407b9.png](https://s41.ax1x.com/2025/12/02/pZZa7K1.png))
 ### 2.sft微调
 完成这一步模型算是可以对话的程度，可以使用sft_chat观察模型的效果，为了避免遗忘预训练的知识，这里建议学习率为预训练的1/5。一般一轮即可
 ```bash
@@ -83,7 +83,7 @@ python sft_train.py
 python sft_chat.py
 ```
 #### 可以看到模型能根据我们的问题回答问题了，我们从0到1训练了一个自己的模型
-![img_1.png](https://youke1.picui.cn/s1/2025/11/04/69096a78b708a.png)
+![img_1.png]([https://youke1.picui.cn/s1/2025/11/04/69096a78b708a.png](https://s41.ax1x.com/2025/12/02/pZZaovR.png))
 ### 3.说明
 两个模型只作为基础模型，可以自己修改参数变成更大规模的模型
 
