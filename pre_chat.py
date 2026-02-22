@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizerFast
 
-# ============ 配置 ============
 class InferenceConfig:
     vocab_path = "bert-base-chinese"
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -15,46 +14,43 @@ class InferenceConfig:
     n_heads = 8
     dropout = 0.1
     special_tokens = ["<|im_start|>", "<|im_end|>"]
-    checkpoint = r"E:\deep-learning\ml\minimind_large\epoch_1.pt"  # 你的权重路径（可改）
+    checkpoint = r"E:\deep-learning\ml\minillm_large\epoch_1.pt"
 
 cfg = InferenceConfig()
 
-# ============ 模型 ============
-class MiniMindBlock(nn.Module):
+class MiniLLMBlock(nn.Module):
     def __init__(self, dim, n_heads, dropout=0.1):
         super().__init__()
         self.ln1 = nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(dim, n_heads, dropout=dropout, batch_first=True)
         self.ln2 = nn.LayerNorm(dim)
 
-        # SwiGLU 前馈
         hidden_dim = dim * 4
         self.ff = nn.Sequential(
             nn.Linear(dim, hidden_dim * 2),
-            nn.GLU(),  # 代替 GELU
+            nn.GLU(),
             nn.Linear(hidden_dim, dim),
             nn.Dropout(dropout)
         )
 
     def forward(self, x, attn_mask=None, key_padding_mask=None):
-        # Pre-LN Transformer
         x = x + self.attn(self.ln1(x), self.ln1(x), self.ln1(x),
                           attn_mask=attn_mask,
                           key_padding_mask=key_padding_mask)[0]
         x = x + self.ff(self.ln2(x))
         return x
 
-class MiniMind(nn.Module):
+class MiniLLM(nn.Module):
     def __init__(self, vocab_size, hidden_dim, n_layers, n_heads, max_len=512, dropout=0.1):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, hidden_dim)
         self.pos_embed = nn.Embedding(max_len, hidden_dim)
         self.layers = nn.ModuleList([
-            MiniMindBlock(hidden_dim, n_heads, dropout) for _ in range(n_layers)
+            MiniLLMBlock(hidden_dim, n_heads, dropout) for _ in range(n_layers)
         ])
         self.ln = nn.LayerNorm(hidden_dim)
         self.head = nn.Linear(hidden_dim, vocab_size, bias=False)
-        self.head.weight = self.embed.weight  # 权重共享
+        self.head.weight = self.embed.weight
 
         self._init_weights()
 
@@ -68,7 +64,6 @@ class MiniMind(nn.Module):
         pos = torch.arange(seq_len, device=input_ids.device).unsqueeze(0)
         x = self.embed(input_ids) + self.pos_embed(pos)
 
-        # Causal mask
         causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=x.device) * float('-inf'), diagonal=1)
         key_padding_mask = attention_mask == 0 if attention_mask is not None else None
 
@@ -77,30 +72,26 @@ class MiniMind(nn.Module):
 
         x = self.ln(x)
         logits = self.head(x)
-        return logits  # (B, L, V)
+        return logits
 
-# ============ 采样 ============
 @torch.no_grad()
 def top_k_top_p_sample(logits, temperature=1.0, top_k=0, top_p=1.0):
-    # logits: (V,)
     if temperature is None or temperature <= 1e-8:
         return torch.argmax(logits, dim=-1)
 
     logits = logits / temperature
 
-    # top-k
     if top_k and top_k > 0:
         top_k = min(top_k, logits.size(-1))
         kth_vals = torch.topk(logits, top_k).values[..., -1, None]
         logits = torch.where(logits < kth_vals, torch.full_like(logits, float('-inf')), logits)
 
-    # top-p
     if top_p and top_p < 1.0:
         sorted_logits, sorted_indices = torch.sort(logits, descending=True)
         probs = F.softmax(sorted_logits, dim=-1)
         cum_probs = torch.cumsum(probs, dim=-1)
         cutoff = cum_probs > top_p
-        cutoff[..., 0] = False  # 至少保留一个
+        cutoff[..., 0] = False
         sorted_logits = torch.where(cutoff, torch.full_like(sorted_logits, float('-inf')), sorted_logits)
         logits = torch.full_like(logits, float('-inf'))
         logits.scatter_(0, sorted_indices, sorted_logits)
@@ -109,7 +100,6 @@ def top_k_top_p_sample(logits, temperature=1.0, top_k=0, top_p=1.0):
     next_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
     return next_id
 
-# ============ 生成 ============
 @torch.no_grad()
 def generate_text(
     model,
@@ -126,15 +116,14 @@ def generate_text(
     eos_id = tokenizer.convert_tokens_to_ids(eos_token) if eos_token is not None else getattr(tokenizer, "eos_token_id", None)
 
     enc = tokenizer(prompt, return_tensors="pt", truncation=True, padding=False, max_length=cfg.max_len)
-    input_ids = enc["input_ids"].to(device)          # (1,L)
+    input_ids = enc["input_ids"].to(device)
     attention_mask = enc["attention_mask"].to(device)
 
     for _ in range(max_new_tokens):
-        # 超过最大长度则停止
         if input_ids.size(1) >= cfg.max_len:
             break
 
-        logits = model(input_ids, attention_mask=attention_mask)[:, -1, :].squeeze(0)  # (V,)
+        logits = model(input_ids, attention_mask=attention_mask)[:, -1, :].squeeze(0)
         next_id = top_k_top_p_sample(logits, temperature=temperature, top_k=top_k, top_p=top_p)
         next_id = next_id.view(1, 1)
 
@@ -147,13 +136,12 @@ def generate_text(
     text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
     return text
 
-# ============ 加载 ============
 def load_tokenizer_and_model():
     tokenizer = BertTokenizerFast.from_pretrained(cfg.vocab_path)
     tokenizer.add_special_tokens({"additional_special_tokens": cfg.special_tokens})
     vocab_size = len(tokenizer)
 
-    model = MiniMind(
+    model = MiniLLM(
         vocab_size=vocab_size,
         hidden_dim=cfg.hidden_dim,
         n_layers=cfg.n_layers,
@@ -168,8 +156,6 @@ def load_tokenizer_and_model():
 
     model.head.weight = model.embed.weight
     return tokenizer, model
-
-
 
 if __name__ == "__main__":
     tokenizer, model = load_tokenizer_and_model()
